@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+
+<html lang="en-US">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recreation of MDN tilemaps examples using jsgame0.js</title>
+  <script src="../jsgame0.js"></script>
+  <style type="text/css" media="screen">
+body {
+  background-color: white;
+  color: black;
+}
+.hidden {
+  display: none;
+}
+#original {
+  margin-left: 1em;
+}
+  </style>
+</head>
+
+<body>
+<section id="imageLoader" class="hidden">
+  <img class="hidden" src="images/tiles.png" alt="tiles" data-name="tiles">
+</section>
+
+<main>
+<h1>Recreation of MDN tilemaps examples using jsgame0.js</h1>
+
+<canvas id="screen">
+The game screen appears here if your browser supports the Canvas API.
+</canvas>
+<section id="controls">
+  <button type="button" id="reset">Reset</button>
+  <button type="button" id="pause">Pause</button>
+</section>
+
+<p>Recreation of <a href="https://mozdevs.github.io/gamedev-js-tiles/square/scroll.html">Scrolling tilemaps</a>
+using <a href="https://github.com/thisarray/jsgame0">jsgame0.js</a>.</p>
+
+<p>Use arrow keys to move.</p>
+
+<h2>Attribution</h2>
+
+<p>Image was made by <a href="https://www.kenney.nl/">Kenney</a> and published under <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0 - Public Domain license</a>.</p>
+
+</main>
+
+<script>
+WIDTH = 512;
+HEIGHT = 512;
+
+/*
+ * Integer speed of the camera movement in pixels per second.
+ */
+const CAMERA_SPEED = 256;
+
+/*
+ * Integer width or height of each tile in pixels.
+ */
+const TILE_SIZE = 64;
+
+/*
+ * Class containing the location of every tile in the world.
+ */
+class WorldMap {
+  constructor(width, height, data) {
+    if (typeof width !== 'number') {
+      throw new TypeError('width must be a positive number.');
+    }
+    if (typeof height !== 'number') {
+      throw new TypeError('height must be a positive number.');
+    }
+    if (width <= 0) {
+      throw new RangeError('width must be a positive number.');
+    }
+    if (height <= 0) {
+      throw new RangeError('height must be a positive number.');
+    }
+    if (data.length < (width * height)) {
+      throw new RangeError('data is too short.');
+    }
+
+    this.width = width;
+    this.height = height;
+    this.array = new Uint8ClampedArray(this.width * this.height);
+    for (let i = 0; i < this.array.length; i++) {
+      this.array[i] = data[i];
+    }
+  }
+
+  /*
+   * Return the value at coordinates (x, y).
+   */
+  getAt(x = 0, y = 0, fallback = 0) {
+    if (typeof x !== 'number') {
+      throw new TypeError('x must be a number.');
+    }
+    if (typeof y !== 'number') {
+      throw new TypeError('y must be a number.');
+    }
+
+    if (x < 0) {
+      return fallback;
+    }
+    if (y < 0) {
+      return fallback;
+    }
+    if (this.width <= x) {
+      return fallback;
+    }
+    if (this.height <= y) {
+      return fallback;
+    }
+    return this.array[(y*this.width)+x];
+  }
+}
+
+let camera, layer1, layer2;
+
+function reset() {
+  camera = {
+    x: 0,
+    y: 0
+  };
+  layer1 = new WorldMap(12, 12, [
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
+    3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
+    3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
+    3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
+    3, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 3,
+    3, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 3,
+    3, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 3,
+    3, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 3,
+    3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 3,
+    3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 3,
+    3, 3, 3, 1, 1, 2, 3, 3, 3, 3, 3, 3
+  ]);
+  layer2 = new WorldMap(12, 12, [
+    4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4,
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+    4, 0, 0, 5, 0, 0, 0, 0, 0, 5, 0, 4,
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+    4, 4, 4, 0, 5, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 0, 0, 3, 3, 3, 3, 3, 3, 3
+  ]);
+}
+
+function drawLayer(layer) {
+  let startCol = Math.floor(camera.x / TILE_SIZE),
+      endCol = startCol + (WIDTH / TILE_SIZE),
+      startRow = Math.floor(camera.y / TILE_SIZE),
+      endRow = startRow + (HEIGHT / TILE_SIZE),
+      offsetX = -camera.x + (startCol * TILE_SIZE),
+      offsetY = -camera.y + (startRow * TILE_SIZE),
+      tile, x, y;
+  for (let c = startCol; c <= endCol; c++) {
+    for (let r = startRow; r <= endRow; r++) {
+      tile = layer.getAt(c, r);
+      if (tile > 0) {
+        // If the tile is not the empty tile
+        x = ((c - startCol) * TILE_SIZE) + offsetX;
+        y = ((r - startRow) * TILE_SIZE) + offsetY;
+        screen.blit('tiles', new Rect((tile - 1) * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE), new Rect(Math.round(x), Math.round(y), TILE_SIZE, TILE_SIZE));
+      }
+    }
+  }
+}
+
+function draw() {
+  // Draw map background layer
+  drawLayer(layer1);
+  // Draw map top layer
+  drawLayer(layer2);
+}
+
+function moveCamera(delta, dx, dy) {
+  // Move camera
+  camera.x += dx * CAMERA_SPEED * delta;
+  camera.y += dy * CAMERA_SPEED * delta;
+  // Clamp camera to within the world
+  camera.x = Math.max(0, Math.min(camera.x, (layer1.width * TILE_SIZE) - WIDTH));
+  camera.y = Math.max(0, Math.min(camera.y, (layer1.height * TILE_SIZE) - HEIGHT));
+}
+
+function update(dt) {
+  let dx = 0,
+      dy = 0;
+  if (keyboard[keys.LEFT]) {
+    dx = -1;
+  }
+  if (keyboard[keys.RIGHT]) {
+    dx = 1;
+  }
+  if (keyboard[keys.UP]) {
+    dy = -1;
+  }
+  if (keyboard[keys.DOWN]) {
+    dy = 1;
+  }
+  moveCamera(dt, dx, dy);
+}
+
+window.addEventListener('load', (event) => {
+  images.LOAD('#imageLoader img');
+  reset();
+  screen.set_mode('#screen', '#reset', '#pause');
+});
+</script>
+</body>
+
+</html>
