@@ -22,6 +22,7 @@ body {
 
 <body>
 <section id="imageLoader" class="hidden">
+  <img class="hidden" src="images/character.png" alt="character" data-name="character">
   <img class="hidden" src="images/tiles.png" alt="tiles" data-name="tiles">
 </section>
 
@@ -36,14 +37,14 @@ The game screen appears here if your browser supports the Canvas API.
   <button type="button" id="pause">Pause</button>
 </section>
 
-<p>Recreation of <a href="https://mozdevs.github.io/gamedev-js-tiles/square/scroll.html">Scrolling tilemaps</a>
+<p>Recreation of <a href="https://mozdevs.github.io/gamedev-js-tiles/square/logic-grid.html">Collisions in tilemaps</a>
 using <a href="https://github.com/thisarray/jsgame0">jsgame0.js</a>.</p>
 
 <p>Use arrow keys to move.</p>
 
 <h2>Attribution</h2>
 
-<p>Image was made by <a href="https://www.kenney.nl/">Kenney</a> and published under <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0 - Public Domain license</a>.</p>
+<p>Images were made by <a href="https://www.kenney.nl/">Kenney</a> and published under <a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0 - Public Domain license</a>.</p>
 
 </main>
 
@@ -52,9 +53,9 @@ WIDTH = 512;
 HEIGHT = 512;
 
 /*
- * Integer speed of the camera movement in pixels per second.
+ * Integer speed of the hero movement in pixels per second.
  */
-const CAMERA_SPEED = 256;
+const HERO_SPEED = 256;
 
 /*
  * Integer width or height of each tile in pixels.
@@ -115,15 +116,46 @@ class WorldMap {
     }
     return this.array[(y*this.width)+x];
   }
+
+  /*
+   * Return true if the tile at (x, y) is solid (3 or 5).
+   */
+  isSolidAt(x = 0, y = 0) {
+    if (typeof x !== 'number') {
+      throw new TypeError('x must be a number.');
+    }
+    if (typeof y !== 'number') {
+      throw new TypeError('y must be a number.');
+    }
+
+    if (x < 0) {
+      return false;
+    }
+    if (y < 0) {
+      return false;
+    }
+    if (this.width <= x) {
+      return false;
+    }
+    if (this.height <= y) {
+      return false;
+    }
+    let tile = this.getAt(x, y);
+    return ((tile === 3) || (tile === 5));
+  }
 }
 
-let camera, layer1, layer2;
+let camera, hero, layer1, layer2;
 
 function reset() {
   camera = {
     x: 0,
     y: 0
   };
+  hero = new Actor('character');
+  hero.center = [0, 0];
+  hero.worldX = 160;
+  hero.worldY = 160;
   layer1 = new WorldMap(12, 12, [
     3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
     3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3,
@@ -176,20 +208,99 @@ function drawLayer(layer) {
   }
 }
 
+function drawGrid() {
+  let width = layer1.width * TILE_SIZE,
+      height = layer1.height * TILE_SIZE,
+      x, y;
+  for (let r = 0; r < layer1.height; r++) {
+    x = -camera.x;
+    y = (r * TILE_SIZE) - camera.y;
+    screen.draw.line([x, y], [width, y], 'black');
+  }
+  for (let c = 0; c < layer1.width; c++) {
+    x = (c * TILE_SIZE) - camera.x;
+    y = -camera.y;
+    screen.draw.line([x, y], [x, height], 'black');
+  }
+}
+
 function draw() {
   // Draw map background layer
   drawLayer(layer1);
+
+  // Draw main character
+  hero.draw();
+
   // Draw map top layer
   drawLayer(layer2);
+
+  drawGrid();
 }
 
-function moveCamera(delta, dx, dy) {
-  // Move camera
-  camera.x += dx * CAMERA_SPEED * delta;
-  camera.y += dy * CAMERA_SPEED * delta;
+function updateCamera() {
+  // Assume hero should be placed at the center of the screen whenever possible
+  hero.center = [WIDTH / 2, HEIGHT / 2];
+
+  // Make camera follow hero
+  camera.x = hero.worldX - (WIDTH / 2);
+  camera.y = hero.worldY - (HEIGHT / 2);
+
   // Clamp camera to within the world
-  camera.x = Math.max(0, Math.min(camera.x, (layer1.width * TILE_SIZE) - WIDTH));
-  camera.y = Math.max(0, Math.min(camera.y, (layer1.height * TILE_SIZE) - HEIGHT));
+  let maxX = (layer1.width * TILE_SIZE) - WIDTH,
+      maxY = (layer1.height * TILE_SIZE) - HEIGHT;
+  camera.x = Math.max(0, Math.min(camera.x, maxX));
+  camera.y = Math.max(0, Math.min(camera.y, maxY));
+
+  // In map corners, hero cannot be placed in the center of the screen
+  // and we have to change its screen coordinates
+
+  // left and right sides
+  if ((hero.worldX < (WIDTH / 2)) || (hero.worldX > (maxX + (WIDTH / 2)))) {
+    hero.centerx = hero.worldX - camera.x;
+  }
+
+  // top and bottom sides
+  if ((hero.worldY < (HEIGHT / 2)) || (hero.worldY > (maxY + (HEIGHT / 2)))) {
+    hero.centery = hero.worldY - camera.y;
+  }
+}
+
+function moveHero(delta, dx, dy) {
+  // Move hero
+  hero.worldX += dx * HERO_SPEED * delta;
+  hero.worldY += dy * HERO_SPEED * delta;
+
+  // Check if we walked into a solid tile
+  let left = hero.worldX - (TILE_SIZE / 2),
+      right = hero.worldX + (TILE_SIZE / 2) - 1,
+      top = hero.worldY - (TILE_SIZE / 2),
+      bottom = hero.worldY + (TILE_SIZE / 2) - 1,
+      collision = (layer1.isSolidAt(Math.floor(left / TILE_SIZE), Math.floor(top / TILE_SIZE)) ||
+                   layer1.isSolidAt(Math.floor(right / TILE_SIZE), Math.floor(top / TILE_SIZE)) ||
+                   layer1.isSolidAt(Math.floor(right / TILE_SIZE), Math.floor(bottom / TILE_SIZE)) ||
+                   layer1.isSolidAt(Math.floor(left / TILE_SIZE), Math.floor(bottom / TILE_SIZE)) ||
+                   layer2.isSolidAt(Math.floor(left / TILE_SIZE), Math.floor(top / TILE_SIZE)) ||
+                   layer2.isSolidAt(Math.floor(right / TILE_SIZE), Math.floor(top / TILE_SIZE)) ||
+                   layer2.isSolidAt(Math.floor(right / TILE_SIZE), Math.floor(bottom / TILE_SIZE)) ||
+                   layer2.isSolidAt(Math.floor(left / TILE_SIZE), Math.floor(bottom / TILE_SIZE)));
+  if (collision) {
+    if (dy > 0) {
+      hero.worldY = (-TILE_SIZE / 2) + (Math.floor(bottom / TILE_SIZE) * TILE_SIZE);
+    }
+    else if (dy < 0) {
+      hero.worldY = (TILE_SIZE / 2) + ((Math.floor(top / TILE_SIZE) + 1) * TILE_SIZE);
+    }
+    else if (dx > 0) {
+      hero.worldX = (-TILE_SIZE / 2) + (Math.floor(right / TILE_SIZE) * TILE_SIZE);
+    }
+    else if (dx < 0) {
+      hero.worldX = (TILE_SIZE / 2) + ((Math.floor(left / TILE_SIZE) + 1) * TILE_SIZE);
+    }
+  }
+
+  // Clamp hero to within the world
+  hero.worldX = Math.max(0, Math.min(hero.worldX, layer1.width * TILE_SIZE));
+  hero.worldY = Math.max(0, Math.min(hero.worldY, layer1.height * TILE_SIZE));
 }
 
 function update(dt) {
@@ -199,17 +310,18 @@ function update(dt) {
   if (keyboard[keys.LEFT]) {
     dx = -1;
   }
-  if (keyboard[keys.RIGHT]) {
+  else if (keyboard[keys.RIGHT]) {
     dx = 1;
   }
-  if (keyboard[keys.UP]) {
+  else if (keyboard[keys.UP]) {
     dy = -1;
   }
-  if (keyboard[keys.DOWN]) {
+  else if (keyboard[keys.DOWN]) {
     dy = 1;
   }
 
-  moveCamera(dt, dx, dy);
+  moveHero(dt, dx, dy);
+  updateCamera();
 }
 
 window.addEventListener('load', (event) => {
